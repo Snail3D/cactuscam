@@ -1,0 +1,19 @@
+# PlatformIO build tree
+.pio/
+
+# real credentials — never committed (copy from barkcam's include/credentials.h)
+fw/include/credentials.h
+
+# build artifacts, but keep the flashable download in docs/
+*.bin
+!docs/firmware/*.bin
+
+# studio runtime + media archive (local only)
+media/
+studio.log
+
+# local reference clone + diagnostic artifacts — not part of the project
+ref-barkcam/
+board-flash.bin
+transcript.txt
+*.srt

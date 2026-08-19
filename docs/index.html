@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05050a">
+<meta name="description" content="Cactus Cam — a half-dollar-size camera agent on the XIAO ESP32S3 Sense. Talk to it on Telegram: photos, video clips, voice notes, timers. Flash it in your browser, no install needed.">
+<title>Cactus Cam — flash it in your browser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%8C%B5%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════
+   RESET & TOKENS — inherited from snail3d.com (barkcam system)
+   ═══════════════════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#05050a;--bg2:#0a0a16;
+  --fg:#f0eff4;--muted:rgba(240,239,244,.55);
+  --line:rgba(255,255,255,.08);
+  --cyan:#00f0ff;--magenta:#ff2d92;--gold:#ffb83d;--purple:#8d79ff;--green:#3dffa0;
+  --sans:'Space Grotesk',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --serif:'Instrument Serif',Georgia,serif;
+  --max:1280px;
+}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:var(--sans);font-size:16px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+::selection{background:var(--green);color:var(--bg)}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+
+/* ═══════════════════════════════════════════════════════════
+   ATMOSPHERE — particle field + film grain (snail3d.com)
+   ═══════════════════════════════════════════════════════════ */
+#bgCanvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+.grain{position:fixed;inset:0;z-index:9998;pointer-events:none;opacity:.035;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E")}
+
+/* ═══════════════════════════════════════════════════════════
+   NAV
+   ═══════════════════════════════════════════════════════════ */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:clamp(12px,2vw,20px) clamp(16px,4vw,48px);
+  transition:all .4s ease;
+}
+nav.scrolled{background:rgba(5,5,10,.7);backdrop-filter:blur(20px);border-bottom:1px solid var(--line)}
+.nav-logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px;letter-spacing:.05em}
+.nav-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+.nav-links{display:flex;gap:clamp(12px,2vw,28px);align-items:center}
+.nav-links a{font-size:14px;color:var(--muted);transition:color .3s;position:relative}
+.nav-links a:hover{color:var(--fg)}
+.nav-links a::after{content:'';position:absolute;bottom:-4px;left:0;width:0;height:2px;background:var(--green);transition:width .3s}
+.nav-links a:hover::after{width:100%}
+.nav-cta{
+  font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  padding:8px 18px;border:1px solid var(--line);border-radius:999px;transition:all .3s;
+}
+.nav-cta:hover{border-color:var(--green);color:var(--green);box-shadow:0 0 20px rgba(61,255,160,.15)}
+
+/* ═══════════════════════════════════════════════════════════
+   LAYOUT
+   ═══════════════════════════════════════════════════════════ */
+.wrap{position:relative;z-index:1;max-width:var(--max);margin:0 auto;padding:0 clamp(20px,5vw,48px)}
+section{padding:clamp(60px,10vw,120px) 0;position:relative}
+.section-tag{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.section-tag .dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+.section-title{font-size:clamp(1.8rem,5vw,3.2rem);font-weight:700;line-height:1.1;letter-spacing:-.03em;margin-bottom:16px}
+.section-desc{color:var(--muted);font-size:clamp(.95rem,1.8vw,1.1rem);max-width:580px;margin-bottom:48px}
+
+/* ═══════════════════════════════════════════════════════════
+   HERO — the conversation, live (simulated)
+   ═══════════════════════════════════════════════════════════ */
+.hero{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:120px 0 80px}
+.hero-grid{display:grid;grid-template-columns:.95fr 1.05fr;gap:clamp(32px,6vw,72px);align-items:center}
+
+/* device chat panel — the board's Telegram conversation */
+.device{
+  border-radius:20px;border:1px solid rgba(61,255,160,.28);
+  background:linear-gradient(180deg,#14141f,#0a0a12);
+  box-shadow:0 40px 90px rgba(0,0,0,.55),0 0 60px rgba(61,255,160,.07);
+  overflow:hidden;animation:fadeUp .8s .15s ease both;
+}
+.device-head{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--line)}
+.device-status{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--green)}
+.device-status .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+.device-sim{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--muted)}
+#chat{display:flex;flex-direction:column;gap:10px;padding:20px;height:340px;overflow:hidden;background:#050508}
+.msg{max-width:78%;padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.45;opacity:0;transform:translateY(12px);transition:all .4s ease}
+.msg.show{opacity:1;transform:none}
+.msg.you{align-self:flex-end;background:#2b5278;border-bottom-right-radius:4px}
+.msg.bot{align-self:flex-start;background:#1c2733;border-bottom-left-radius:4px}
+.msg .cap{display:block;font-size:11.5px;color:var(--muted);margin-top:4px}
+.msg .media{display:block;height:86px;border-radius:8px;margin-bottom:6px;
+  background:linear-gradient(135deg,#2d4a3e,#1a2b3f 60%,#3d2f1a);
+  background-size:200% 200%;animation:pan 6s ease-in-out infinite alternate}
+.msg .media.video{background:linear-gradient(135deg,#26344a,#101826 60%,#2d2416)}
+.msg .media::after{content:'\1F4F7\uFE0F';position:absolute}
+.msg .media{position:relative;display:flex;align-items:center;justify-content:center;font-size:26px}
+@keyframes pan{from{background-position:0% 50%}to{background-position:100% 50%}}
+.device-reads{display:flex;gap:clamp(14px,3vw,28px);padding:16px 20px;border-top:1px solid var(--line)}
+.read .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.read .v{font-family:var(--mono);font-size:15px;margin-top:2px}
+.read .v.green{color:var(--green)} .read .v.gold{color:var(--gold)}
+.device-foot{padding:10px 20px;border-top:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--muted)}
+
+/* offer + action */
+.hero-copy{animation:fadeUp .8s ease both}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--green);padding:6px 16px;border:1px solid rgba(61,255,160,.2);border-radius:999px;
+  margin-bottom:24px;background:rgba(61,255,160,.04);
+}
+.hero-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+.hero h1{font-size:clamp(2.8rem,7vw,5.4rem);font-weight:700;line-height:.95;letter-spacing:-.04em}
+.hero h1 .accent{background:linear-gradient(135deg,var(--green),var(--gold));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.serif{font-family:var(--serif);font-style:italic;font-weight:400;letter-spacing:-.02em}
+.hero-sub{color:var(--muted);font-size:clamp(1rem,2vw,1.25rem);max-width:480px;margin:20px 0 32px;line-height:1.55}
+
+.flash-box{max-width:480px}
+#flash{
+  width:100%;font-family:var(--sans);font-size:17px;font-weight:600;
+  background:rgba(61,255,160,.1);color:var(--green);
+  border:1px solid rgba(61,255,160,.4);border-radius:12px;
+  padding:18px 24px;cursor:pointer;transition:all .3s;
+}
+#flash:hover:not(:disabled){border-color:var(--green);box-shadow:0 0 28px rgba(61,255,160,.25);transform:translateY(-2px)}
+#flash:active:not(:disabled){opacity:.7}
+#flash:disabled{opacity:.4;cursor:default}
+#flash:focus-visible,.nav-cta:focus-visible,a:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+#bar{height:8px;background:#1a1a24;border-radius:4px;overflow:hidden;margin-top:14px;display:none}
+#fill{height:100%;width:0;background:linear-gradient(90deg,var(--green),var(--gold));transition:width .2s}
+#status{min-height:22px;font-family:var(--mono);font-size:13px;margin-top:10px;color:var(--muted)}
+#status.ok{color:var(--green)} #status.err{color:var(--magenta)}
+.flash-note{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);margin-top:12px}
+
+.hero-scroll{
+  position:absolute;bottom:28px;left:50%;transform:translateX(-50%);
+  font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--muted);
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  animation:fadeUp 1s .6s ease both;
+}
+.hero-scroll .line{width:1px;height:32px;background:linear-gradient(to bottom,var(--muted),transparent);animation:scrollLine 2s infinite}
+
+/* ═══════════════════════════════════════════════════════════
+   CAPABILITIES — the command surface, as a terminal card
+   ═══════════════════════════════════════════════════════════ */
+.cap-grid{display:grid;grid-template-columns:.9fr 1.1fr;gap:clamp(32px,6vw,72px);align-items:center}
+.term{
+  border-radius:14px;border:1px solid var(--line);background:#0a0a12;
+  box-shadow:0 40px 90px rgba(0,0,0,.5);overflow:hidden;
+}
+.term-head{display:flex;align-items:center;gap:6px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.term-head .d{width:10px;height:10px;border-radius:50%;background:#333}
+.term-head .d:first-child{background:#ff5f57}.term-head .d:nth-child(2){background:#febc2e}.term-head .d:nth-child(3){background:#28c840}
+.term-body{padding:18px;font-family:var(--mono);font-size:13px;line-height:2.05;color:var(--muted)}
+.term-body .cmd{color:var(--green)}
+.term-body .res{color:var(--fg);opacity:.85}
+.cap-list{list-style:none;display:flex;flex-direction:column;gap:18px}
+.cap-list li{display:flex;gap:14px;color:var(--muted);font-size:.98rem;line-height:1.55}
+.cap-list .n{font-family:var(--mono);font-size:12px;color:var(--gold);border:1px solid rgba(255,184,61,.3);border-radius:8px;padding:4px 9px;flex-shrink:0;margin-top:2px}
+.cap-list b{color:var(--fg);font-weight:600}
+
+/* ═══════════════════════════════════════════════════════════
+   SETUP — three steps + the board's own config screen
+   ═══════════════════════════════════════════════════════════ */
+.setup-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(32px,6vw,72px);align-items:center}
+.steps{list-style:none;display:flex;flex-direction:column;gap:20px;margin-top:8px}
+.steps li{display:flex;gap:16px;align-items:flex-start;color:var(--muted);font-size:.98rem;line-height:1.55}
+.steps .n{font-family:var(--mono);font-size:12px;color:var(--green);border:1px solid rgba(61,255,160,.3);border-radius:8px;padding:4px 9px;flex-shrink:0;margin-top:2px}
+.steps b{color:var(--fg);font-weight:600}
+.setup-visual{position:relative;display:flex;justify-content:center}
+.phone-glow{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:min(460px,92vw);height:min(80vh,660px);
+  background:radial-gradient(circle,rgba(61,255,160,.13),transparent 65%);
+  animation:breathe 4.5s ease-in-out infinite;pointer-events:none;
+}
+.phone-frame{
+  position:relative;border-radius:40px;padding:12px;
+  background:linear-gradient(180deg,#14141f,#0a0a12);
+  border:1px solid rgba(61,255,160,.28);
+  box-shadow:0 40px 90px rgba(0,0,0,.55),0 0 60px rgba(61,255,160,.07);
+}
+.phone-frame img{border-radius:30px;width:min(280px,56vw);height:auto}
+
+/* ═══════════════════════════════════════════════════════════
+   OTHER WAYS
+   ═══════════════════════════════════════════════════════════ */
+.alt-list{list-style:none;display:flex;flex-direction:column;gap:18px;max-width:640px}
+.alt-list li{display:flex;gap:12px;color:var(--muted);font-size:.95rem;line-height:1.6}
+.alt-list li::before{content:'▸';font-family:var(--mono);color:var(--green);flex-shrink:0}
+.alt-list a{color:var(--fg);border-bottom:1px solid rgba(61,255,160,.35);transition:color .3s,border-color .3s}
+.alt-list a:hover{color:var(--green);border-color:var(--green)}
+code,pre{font-family:var(--mono);font-size:.85em}
+.alt-list code{background:#1a1a24;border:1px solid var(--line);border-radius:6px;padding:2px 8px;color:var(--fg)}
+.alt-list pre{background:#0a0a12;border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin-top:8px;overflow-x:auto;color:var(--muted);line-height:1.7}
+.alt-list pre .c{color:var(--green)}
+
+/* ═══════════════════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════════════════ */
+footer{padding:60px 0 40px;border-top:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:24px;position:relative;z-index:1}
+footer .links{display:flex;gap:24px;flex-wrap:wrap;justify-content:center}
+footer .links a{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:13px;color:var(--muted);transition:color .3s}
+footer .links a:hover{color:var(--fg)}
+footer .copyright{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.08em}
+
+/* ═══════════════════════════════════════════════════════════
+   MOTION
+   ═══════════════════════════════════════════════════════════ */
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
+@keyframes scrollLine{0%{transform:scaleY(0);transform-origin:top}50%{transform:scaleY(1);transform-origin:top}50.1%{transform-origin:bottom}100%{transform:scaleY(0);transform-origin:bottom}}
+@keyframes breathe{0%,100%{opacity:.55;transform:translate(-50%,-50%) scale(1)}50%{opacity:1;transform:translate(-50%,-50%) scale(1.07)}}
+.reveal{opacity:0;transform:translateY(40px);transition:opacity .7s ease,transform .7s ease}
+.reveal.visible{opacity:1;transform:none}
+
+/* ═══════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════ */
+@media(max-width:920px){
+  .hero-grid,.cap-grid,.setup-grid{grid-template-columns:1fr;gap:40px}
+  .hero-copy{order:-1}
+  .device{max-width:560px;margin:0 auto;width:100%}
+  .cap-list{order:-1}
+  .setup-visual{order:-1}
+  .phone-frame img{width:min(260px,54vw)}
+}
+@media(max-width:640px){
+  nav{flex-wrap:wrap;row-gap:10px}   /* two-row nav on phones — links stay reachable */
+  .nav-links a:not(.nav-cta){font-size:12px} .nav-links{gap:8px} .nav-logo{font-size:15px}
+  #chat{height:280px}
+}
+
+/* Reduce motion */
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;transition-duration:.01ms!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+<!--
+IMPECCABLE DIRECTION CONTRACT — cactuscam flasher (docs/index.html)
+
+THESIS: The page opens as the conversation — a simulated Telegram chat where
+the visitor types "photo" and the cactus answers, because talking to your
+camera is the product. It refuses both the static hero and barkcam's meter;
+the chat IS the device dashboard.
+
+OWN-WORLD: snail3d.com's system, inherited whole from barkcam: #05050a
+ground, neon accents with green (#3dffa0) as Cactus Cam's voice (it is a
+cactus — green is the brand), gold (#ffb83d) as the desert secondary,
+Space Grotesk display + JetBrains Mono data + Instrument Serif italic
+accents, drifting particle canvas, film grain.
+
+STORY: A visitor watches the board answer a message (a labeled simulated
+feed), believes it works, clicks one button to flash their own board, then
+follows three steps through the 10-minute config window. Done in ~2 minutes.
+
+FORM: conversation-panel opening — the chat transcript is the hero object;
+terminal card for the command surface; phone frame for setup.
+
+FINISH: unreviewed and undocumented is unfinished; this build ends with the
+finish review, the verdict, and DESIGN.md.
+-->
+<canvas id="bgCanvas" aria-hidden="true"></canvas>
+<div class="grain" aria-hidden="true"></div>
+
+<nav id="nav">
+  <a class="nav-logo" href="#top"><span class="dot"></span>CACTUS CAM</a>
+  <div class="nav-links">
+    <a href="#flash-sec">Flash</a>
+    <a href="#talk">Talk to it</a>
+    <a href="#setup">Setup</a>
+    <a href="#other">Other ways</a>
+    <a class="nav-cta" href="https://github.com/Snail3D/cactuscam" target="_blank">GitHub ↗</a>
+  </div>
+</nav>
+
+<main id="top">
+<!-- ═══════════ HERO — the conversation, live (simulated) ═══════════ -->
+<section class="hero" id="flash-sec">
+  <div class="wrap hero-grid">
+
+    <div class="device" role="img" aria-label="Simulated Telegram conversation: the owner asks for a photo, the cactus acknowledges and sends one">
+      <div class="device-head">
+        <span class="device-status"><span class="dot"></span>ONLINE</span>
+        <span class="device-sim">SIMULATED FEED</span>
+      </div>
+      <div id="chat" aria-hidden="true"></div>
+      <div class="device-reads">
+        <div class="read"><div class="k">Last send</div><div class="v green" id="rSend">—</div></div>
+        <div class="read"><div class="k">Timers</div><div class="v gold" id="rTimer">—</div></div>
+        <div class="read"><div class="k">Uptime</div><div class="v" id="rUp">—</div></div>
+      </div>
+      <div class="device-foot">XIAO ESP32S3 SENSE · FW V1.0</div>
+    </div>
+
+    <div class="hero-copy">
+      <span class="hero-badge"><span class="dot"></span>Latest build · v1.0</span>
+      <h1>Cactus <span class="accent">Cam</span></h1>
+      <p class="hero-sub">A half-dollar-size camera agent. Message it on Telegram — it answers back, snaps photos, rolls video clips, records voice notes, and keeps its own timers. No cloud, no AI model: deterministic signal processing on the board.</p>
+      <p style="color:var(--muted);font-size:.9rem;max-width:480px;margin:-14px 0 30px;line-height:1.55">It also <span style="color:var(--green);font-weight:600">listens for barks</span> — the barkcam pipeline rides along, so a loud dog still gets you a photo.</p>
+      <div class="flash-box">
+        <button id="flash">⚡ Flash in your browser</button>
+        <div id="bar"><div id="fill"></div></div>
+        <div id="status" role="status" aria-live="polite"></div>
+        <p class="flash-note">Chrome or Edge · no install · your saved settings are kept</p>
+      </div>
+    </div>
+
+  </div>
+  <div class="hero-scroll" aria-hidden="true">SCROLL<span class="line"></span></div>
+</section>
+
+<!-- ═══════════ TALK TO IT — the command surface ═══════════ -->
+<section id="talk">
+  <div class="wrap">
+    <div class="section-tag reveal"><span class="dot"></span>Talk to it</div>
+    <h2 class="section-title reveal">Plain words, <span class="serif">real actions</span></h2>
+    <p class="section-desc reveal">Every message gets an instant ack, then progress edits while it works. The parser is deterministic keywords — nothing can hang on a model call.</p>
+    <div class="cap-grid">
+      <ul class="cap-list reveal">
+        <li><span class="n">01</span><div><b>photo</b> — one now, or <b>every 5 min photo</b> on a timer (up to three at once, all rate-limited).</div></li>
+        <li><span class="n">02</span><div><b>video 10s</b> — a real clip: frames stream to your Mac, which encodes the MP4 and posts it back.</div></li>
+        <li><span class="n">03</span><div><b>record 8s</b> — a voice note from the board's own microphone.</div></li>
+        <li><span class="n">04</span><div><b>exposure · brightness · contrast · saturation · wb · night</b> — tune the image from your phone.</div></li>
+        <li><span class="n">05</span><div><b>stop · status</b> — clear timers, see what's running. It knows its limits and says so.</div></li>
+      </ul>
+      <div class="term reveal" aria-hidden="true">
+        <div class="term-head"><span class="d"></span><span class="d"></span><span class="d"></span></div>
+        <div class="term-body" id="termBody">
+          <div><span class="cmd">you ›</span> photo</div>
+          <div><span class="res">🌵 got it — needle-ing the cactus…</span></div>
+          <div><span class="res">📷 you asked · 14:32:07</span></div>
+          <div><span class="cmd">you ›</span> video 10s</div>
+          <div><span class="res">🌵 rolling… 10 s</span></div>
+          <div><span class="res">🎬 clip sent to the studio — MP4 in a moment.</span></div>
+          <div><span class="cmd">you ›</span> every 5 min photo</div>
+          <div><span class="res">🌵 timer set: photo every 5 min.</span></div>
+          <div><span class="cmd">you ›</span> status</div>
+          <div><span class="res">wifi: up (−41 dBm) · timers: photo every 5 min</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ SETUP ═══════════ -->
+<section id="setup">
+  <div class="wrap">
+    <div class="section-tag reveal"><span class="dot"></span>Setup</div>
+    <h2 class="section-title reveal">Two minutes, <span class="serif">one time</span></h2>
+    <p class="section-desc reveal">After flashing, the board walks you through it. Everything is saved on the board — no account, no cloud.</p>
+    <div class="setup-grid">
+      <ol class="steps reveal">
+        <li><span class="n">01</span><div>Power the board (USB). For 10 minutes it broadcasts an open network <b>cactuscam-config</b> — connect your phone to it.</div></li>
+        <li><span class="n">02</span><div>Open <b>cactuscam.local</b> in your phone's browser (or <b>192.168.4.1</b> if that doesn't resolve).</div></li>
+        <li><span class="n">03</span><div>Enter your home WiFi, a Telegram bot token (from <b>@BotFather</b>) and your user ID (from <b>@userinfobot</b>). Hit <b>Save settings</b>. Done — the board closes its access point when your phone leaves.</div></li>
+      </ol>
+      <div class="setup-visual reveal">
+        <div class="phone-glow"></div>
+        <div class="phone-frame">
+          <img src="ui-config.png" alt="The Cactus Cam config UI on a phone — live mic level with bark threshold, sensitivity, camera and Telegram settings" loading="lazy">
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ OTHER WAYS ═══════════ -->
+<section id="other">
+  <div class="wrap">
+    <div class="section-tag reveal"><span class="dot"></span>Other ways</div>
+    <h2 class="section-title reveal">Prefer the terminal?</h2>
+    <ul class="alt-list reveal">
+      <li><div><a href="firmware/cactuscam-v1.0.bin">Download the firmware</a> and flash with esptool:
+<pre><span class="c">$</span> esptool.py --chip esp32s3 write_flash 0x0 cactuscam-v1.0.bin</pre></div></li>
+      <li><div><a href="https://github.com/Snail3D/cactuscam" target="_blank">Build from source</a> (PlatformIO) — the repo has full docs.</div></li>
+      <li><div>Safari and Firefox don't support WebSerial — use the download above, or open this page in Chrome/Edge.</div></li>
+    </ul>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="links">
+    <a href="https://github.com/Snail3D/cactuscam" target="_blank">GitHub ↗</a>
+    <a href="https://snail3d.com" target="_blank">snail3d.com ↗</a>
+  </div>
+  <div class="copyright">© 2026 SNAIL3D · BUILT IN EL PASO, TX</div>
+</footer>
+
+<script type="module">
+import { ESPLoader, Transport } from './esptool-bundle.js';
+
+const $ = id => document.getElementById(id);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ── status line ─────────────────────────────────────────── */
+const status = (msg, ok) => {
+  $('status').textContent = msg;
+  $('status').className = ok === undefined ? '' : (ok ? 'ok' : 'err');
+};
+
+/* ── flasher — WebSerial + esptool (same mechanism as barkcam) ─── */
+if (!navigator.serial) {
+  $('flash').disabled = true;
+  status('⚠ This browser has no WebSerial — use Chrome or Edge, or download the firmware below.');
+} else {
+  $('flash').addEventListener('click', doFlash);
+}
+
+async function doFlash() {
+  const btn = $('flash');
+  try {
+    btn.disabled = true;
+    status('Downloading firmware…');
+    const data = new Uint8Array(await (await fetch('firmware/cactuscam-v1.0.bin')).arrayBuffer());
+    status(`Firmware ready (${(data.length/1048576).toFixed(2)} MB) — now pick the board's USB port in the popup…`);
+    const port = await navigator.serial.requestPort();
+    const transport = new Transport(port, true);
+    const esp = new ESPLoader({
+      transport, baudrate: 115200,
+      terminal: { clean(){}, writeLine(s){ status(s); }, write(){} }
+    });
+    status('Connecting — the board resets itself, no button pressing…');
+    await esp.main("usb_reset");   // XIAO ESP32S3: native USB, auto-enters bootloader
+    status('Connected — flashing…');
+    $('bar').style.display = 'block';
+    await esp.writeFlash({
+      fileArray: [{ data, address: 0x0 }],    // bootloader + partitions + app
+      flashMode: "qio", flashFreq: "80m", flashSize: "8MB",
+      eraseAll: false,                         // keep NVS (your saved config)
+      compress: true,
+      reportProgress: (_, w, t) => { $('fill').style.width = (100*w/t).toFixed(1) + '%'; status(`Flashing… ${Math.round(100*w/t)}%`); }
+    });
+    await esp.after("hard_reset");
+    await transport.disconnect();
+    $('fill').style.width = '100%';
+    status('✓ Flashed! The board is rebooting. Now do step 1: connect to the cactuscam-config WiFi.', true);
+    btn.disabled = false;
+  } catch (e) {
+    console.error(e);
+    btn.disabled = false;
+    status('✗ ' + (e.message || e) + ' — if the board is running, hold its BOOT button while plugging in USB (bootloader mode), then try again.', false);
+  }
+}
+
+/* ── atmosphere — particle field (snail3d.com, cactus palette) ── */
+(function(){
+  const c = $('bgCanvas'), ctx = c.getContext('2d');
+  let w, h, dpr;
+  const colors = ['#3dffa0','#ffb83d','#8d79ff','#00f0ff'];
+  const N = 80;
+  const P = [];
+
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = c.width = innerWidth * dpr; h = c.height = innerHeight * dpr;
+    c.style.width = innerWidth + 'px'; c.style.height = innerHeight + 'px';
+  }
+  resize(); addEventListener('resize', resize);
+
+  for (let i = 0; i < N; i++) P.push({
+    x: Math.random()*w, y: Math.random()*h,
+    vx: (Math.random()-.5)*.3*dpr, vy: (Math.random()-.5)*.3*dpr,
+    r: (Math.random()*1.5+.5)*dpr, color: colors[i % 4], alpha: Math.random()*.35+.1
+  });
+
+  let mx = -9e4, my = -9e4;
+  addEventListener('mousemove', e => { mx = e.clientX*dpr; my = e.clientY*dpr; });
+
+  function draw(t){
+    ctx.clearRect(0,0,w,h);
+    const o1x = w*.3 + Math.sin(t)*w*.1, o1y = h*.4 + Math.cos(t*.7)*h*.1;
+    let g = ctx.createRadialGradient(o1x,o1y,0,o1x,o1y,w*.3);
+    g.addColorStop(0,'rgba(61,255,160,.03)'); g.addColorStop(1,'rgba(61,255,160,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+    const o2x = w*.7 + Math.cos(t*1.3)*w*.1, o2y = h*.65 + Math.sin(t*.9)*h*.1;
+    g = ctx.createRadialGradient(o2x,o2y,0,o2x,o2y,w*.25);
+    g.addColorStop(0,'rgba(255,184,61,.03)'); g.addColorStop(1,'rgba(255,184,61,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+
+    for (let i = 0; i < N; i++){
+      const p = P[i];
+      if (!reduced){
+        p.x += p.vx; p.y += p.vy;
+        const dx = mx-p.x, dy = my-p.y, d2 = dx*dx+dy*dy;
+        if (d2 < 150*dpr*150*dpr && d2 > 0){ const d = Math.sqrt(d2); p.x += dx/d*.3; p.y += dy/d*.3; }
+        if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+        if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+      }
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle = p.color; ctx.globalAlpha = p.alpha; ctx.fill(); ctx.globalAlpha = 1;
+      for (let j = i+1; j < N; j++){
+        const q = P[j], dx = p.x-q.x, dy = p.y-q.y;
+        if (dx*dx+dy*dy < 110*dpr*110*dpr){
+          ctx.beginPath(); ctx.moveTo(p.x,p.y); ctx.lineTo(q.x,q.y);
+          ctx.strokeStyle = p.color; ctx.globalAlpha = .06; ctx.lineWidth = 1*dpr;
+          ctx.stroke(); ctx.globalAlpha = 1;
+        }
+      }
+    }
+  }
+
+  if (reduced){ draw(0); return; }   // one static frame
+  const loop = now => { draw(now*.0003); requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+})();
+
+/* ── the chat — simulated Telegram conversation (labeled as such) ───── */
+(function(){
+  const chat = $('chat');
+  // the script: [who, text, media?, caption?]
+  const SCRIPT = [
+    ['you', 'photo'],
+    ['bot', '🌵 got it — needle-ing the cactus…'],
+    ['bot', '', 'photo', '📷 you asked · 14:32'],
+    ['you', 'video 10s'],
+    ['bot', '🌵 rolling… 10 s'],
+    ['bot', '', 'video', '🎬 clip — MP4 in a moment'],
+    ['you', 'every 5 min photo'],
+    ['bot', '🌵 timer set: photo every 5 min.'],
+  ];
+  let i = 0;
+
+  function add(who, text, media, cap){
+    const m = document.createElement('div');
+    m.className = 'msg ' + who;
+    if (media) { const md = document.createElement('span'); md.className = 'media' + (media === 'video' ? ' video' : ''); m.appendChild(md); }
+    if (text) m.appendChild(document.createTextNode(text));
+    if (cap && media) { const c = document.createElement('span'); c.className = 'cap'; c.textContent = cap; m.appendChild(c); }
+    chat.appendChild(m);
+    requestAnimationFrame(() => m.classList.add('show'));
+    while (chat.children.length > 6) chat.removeChild(chat.firstChild);
+    return m;
+  }
+
+  function tick(){
+    const [who, text, media, cap] = SCRIPT[i % SCRIPT.length];
+    add(who, text, media, cap);
+    i++;
+    // readouts drift like a real device
+    $('rSend').textContent = ['ok', 'ok', 'ok', 'fail'][i % 4] === 'fail' ? 'retrying…' : 'ok';
+    $('rTimer').textContent = i > 6 ? 'photo / 5 min' : (i > 3 ? 'arming…' : 'none');
+    const s = i * 7;
+    $('rUp').textContent = Math.floor(s/60) + 'm ' + (s%60) + 's';
+  }
+
+  if (reduced){ SCRIPT.slice(0,4).forEach(a => add(...a)); return; }
+  // open with the first exchange already on screen, then keep it alive
+  add(SCRIPT[0][0], SCRIPT[0][1]); i = 1;
+  const loop = () => { tick(); setTimeout(loop, 2600 + Math.random()*1800); };
+  setTimeout(loop, 1200);
+})();
+
+/* ── reveal on scroll + nav state (snail3d.com patterns) ──── */
+const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting){ e.target.classList.add('visible'); io.unobserve(e.target); } }), { threshold: .15 });
+document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+const nav = $('nav');
+addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 40), { passive: true });
+nav.classList.toggle('scrolled', scrollY > 40);
+</script>
+</body>
+</html>
